@@ -1,0 +1,7 @@
+requests
+psutil
+pwinput
+lxml
+beautifulsoup4
+tabulate
+colorama

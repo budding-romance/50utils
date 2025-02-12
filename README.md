@@ -3,7 +3,8 @@
 **50utils** is a Python-based application designed to enhance your RotMG experience by providing a suite of helpful features and utilities.  
 
 ---
-![GitHub all releases](https://img.shields.io/github/downloads/budding-romance/50utils/total)
+![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https://github.com/budding-romance/50utils&count_bg=%2379C83D&title_bg=%23555555&icon=github.svg&icon_color=%23E7E7E7&title=views&edge_flat=false)
+ ![GitHub all releases](https://img.shields.io/github/downloads/budding-romance/50utils/total)
 
 ## **Features**  
 

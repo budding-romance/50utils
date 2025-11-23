@@ -735,6 +735,172 @@ def realmeye_guild(username, password):
         return None
     return []
 
+def realmeye_player(username, password):
+    player_name = input("Player Name: ")
+    session_cookie = realmeye_login(username, password)
+    if not session_cookie:
+        return "Failed to retrieve session cookie."
+
+    url = f"https://www.realmeye.com/player/{player_name}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Accept": "text/html",
+        "Referer": f"https://www.realmeye.com/player/{username}",
+        "Accept-Language": "en",
+        "Cookie": f"session={session_cookie}; gdprCookiePolicyAccepted=true",
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+
+        if "text/html" not in response.headers.get("Content-Type", ""):
+            print(f"Unexpected Content-Type: {response.headers.get('Content-Type')}")
+            return None
+
+        soup = BeautifulSoup(response.text, "lxml")
+
+        # Check if profile is private by looking for summary table
+        summary_table = soup.find("table", class_="summary")
+        if not summary_table:
+            print(
+                f"\n{Fore.YELLOW}Profile for '{player_name}' is private or not found.{Fore.WHITE}"
+            )
+            return None
+
+        player_name_display = ""
+        fame = ""
+        account_fame = ""
+        characters_count = ""
+
+        # Get player name from h1 tag
+        name_section = soup.find("h1")
+        if name_section:
+            player_name_display = name_section.get_text(strip=True)
+
+        # Parse summary table for key info
+        rows = summary_table.find_all("tr")
+        for row in rows:
+            cells = row.find_all("td")
+            if len(cells) >= 2:
+                attribute = cells[0].get_text(strip=True)
+                value = cells[1].get_text(strip=True)
+
+                if attribute == "Fame":
+                    # Extract just the number
+                    fame_match = re.search(r"([\d\s\,]+)", value)
+                    if fame_match:
+                        fame = fame_match.group(1).strip()
+                elif attribute == "Account fame":
+                    # Extract just the number
+                    account_fame_match = re.search(r"([\d\s\,]+)", value)
+                    if account_fame_match:
+                        account_fame = account_fame_match.group(1).strip()
+                elif attribute == "Characters":
+                    characters_count = value
+
+        exalt_url = f"https://www.realmeye.com/exaltations-of/{player_name}"
+        exalt_response = requests.get(exalt_url, headers=headers)
+
+        # Check if exaltation page is accessible
+        if exalt_response.status_code != 200:
+            print(
+                f"{Fore.YELLOW}Exaltation data not available (status: {exalt_response.status_code}){Fore.WHITE}"
+            )
+            exalt_data = {}
+        else:
+            exalt_soup = BeautifulSoup(exalt_response.text, "lxml")
+
+            # Check if we got a private profile page
+            private_check = exalt_soup.find("table", class_="summary")
+            if private_check and "private" in private_check.get_text().lower():
+                print(f"{Fore.YELLOW}Exaltation data is private{Fore.WHITE}")
+                exalt_data = {}
+            else:
+                # Extract exaltation data
+                exalt_data = {}
+                exalt_table = exalt_soup.find("table", id="k")
+                if exalt_table:
+                    exalt_rows = exalt_table.find_all("tr")[1:]  # Skip header row
+
+                    for row in exalt_rows:
+                        cells = row.find_all("td")
+                        if len(cells) >= 3:  # Should have class and exaltations
+                            class_name = cells[1].get_text(strip=True)
+                            # Get the exaltation count from the third column
+                            exalt_count = cells[2].get_text(strip=True)
+                            if exalt_count:
+                                exalt_data[class_name] = exalt_count
+
+                            else:
+                                exalt_data[class_name] = "0"
+                else:
+                    print(f"{Fore.YELLOW}No exaltation data available{Fore.WHITE}")
+
+        # Display player info header
+        print(f"\n{Fore.GREEN}Player Profile: {player_name_display}{Fore.WHITE}")
+        if fame:
+            print(f"Fame: {fame}")
+        if account_fame:
+            print(f"Account Fame: {account_fame}")
+        if characters_count:
+            print(f"Characters: {characters_count}")
+
+        # Extract character information for table display
+        characters_list = []
+        character_rows = soup.find_all("tr")[1:]  # Skip header row
+
+        for char in character_rows:
+            cells = char.find_all("td")
+            if len(cells) >= 5:
+                # Get character class (3rd cell)
+                char_class = cells[2].get_text(strip=True)
+
+                # Get fame (5th cell)
+                fame_cell = cells[4].get_text(strip=True)
+                fame_value = re.sub(
+                    r"[^\d]", "", fame_cell
+                )  # Remove non-numeric characters
+
+                # Check if character is alive (no "Dead" button)
+                dead_button = char.find("button", string="Dead")
+
+                if char_class and fame_value and not dead_button:
+                    # Format fame for display
+                    try:
+                        fame_num = int(fame_value)
+                        if fame_num >= 1000000:
+                            fame_display = f"{fame_num / 1000000:.1f}m"
+                        elif fame_num >= 1000:
+                            fame_display = f"{fame_num / 1000:.1f}k"
+                        else:
+                            fame_display = str(fame_num)
+
+                        # Get exaltation count for this class
+                        exalt_count = exalt_data.get(char_class, "0")
+
+                        characters_list.append((char_class, fame_display, exalt_count))
+                    except ValueError:
+                        continue
+
+        # Display characters in table format with exaltations
+        if characters_list:
+            print(f"\n{Fore.CYAN}Alive Characters:{Fore.WHITE}")
+            print(
+                tabulate(
+                    characters_list,
+                    headers=["Class", "Alive Fame", "Exaltations"],
+                    tablefmt="pretty",
+                )
+                + "\n"
+            )
+        else:
+            print(f"\n{Fore.YELLOW}No alive characters found{Fore.WHITE}\n")
+
+    except requests.RequestException as e:
+        print(f"Error during GET request: {e}")
+        return None
+    return []
+
 def realmeye():
     accounts = load_accounts("realmeye")
     
@@ -744,16 +910,22 @@ def realmeye():
     display_accounts(accounts)
     
     username, password = select_account(accounts)
-    print("\n 1. Show Guild Members\n 2. Compare an In-Game Guild List with RealmEye (not finished yet)\n\n 0. BACK\n")
+    print(
+        "\n 1. Show Guild Members\n 2. Show Player Profile\n 3. Compare an In-Game Guild List with RealmEye (not finished yet)\n\n 0. BACK\n"
+    )
     while True:
-        choice = prompt_input("Select: ", allowed_values={"1", "2", "0"})
+        choice = prompt_input("Select: ", allowed_values={"1", "2", "3", "0"})
         if choice == "0":
             menu()
             break
         elif choice == "1":
             realmeye_guild(username, password)
         elif choice == "2":
-            print("\nThis function is not finished yet. I'll push it once it looks good enough.")
+            realmeye_player(username, password)
+        elif choice == "3":
+            print(
+                "\nThis function is not finished yet. I'll push it once it looks good enough."
+            )
         else:
             return []
 

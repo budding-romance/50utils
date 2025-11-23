@@ -659,24 +659,77 @@ def realmeye_guild(username, password):
         soup = BeautifulSoup(response.text, 'lxml')
 
         members_list = []
-        member_rows = soup.select("table#f tbody tr")
-        
+        # Try multiple table selectors since the table ID might vary
+        member_rows = soup.select("table#e tbody tr")
+        if not member_rows:
+            member_rows = soup.select("table#f tbody tr")
+        if not member_rows:
+            member_rows = soup.select("table tbody tr")
+        if not member_rows:
+            member_rows = soup.find_all("tr")
+
+        if not member_rows:
+            print(f"No guild members found")
+            return None
+
         for row in member_rows:
-            name_cell = row.find("td")
-            if name_cell:
+            cells = row.find_all("td")
+            if len(cells) >= 3:  # Need at least name, rank, fame columns
+                # Extract member name - handle "Private" profiles
+                name_cell = cells[0]
                 member_name = name_cell.get_text(strip=True)
-                member_rank = row.find_all("td")[1].get_text(strip=True)
 
-                fame_cell = row.find_all("td")[2]
-                if fame_cell and fame_cell.find('a'):
-                    fame_value = fame_cell.get_text(strip=True)
-                    member_fame = f"{int(fame_value):,}"
-                else:
+                # Skip header rows and empty names
+                if member_name in ["Name", ""]:
+                    continue
+
+                # Handle "Private" profiles - just keep as "Private"
+                if member_name == "Private":
+                    member_rank = cells[1].get_text(strip=True)
                     member_fame = "Private Fame"
+                else:
+                    member_rank = cells[1].get_text(strip=True)
 
-                members_list.append((member_name, member_rank, member_fame))
+                    # Try to extract fame value - look for <a> tag in fame cell
+                    fame_cell = cells[2]
+                    fame_link = fame_cell.find("a")
+                    if fame_link:
+                        fame_value = fame_link.get_text(strip=True)
+                        try:
+                            # Remove any non-numeric characters and format
+                            fame_value = re.sub(r"[^\d]", "", fame_value)
+                            if fame_value:
+                                member_fame = f"{int(fame_value):,}"
+                            else:
+                                member_fame = "Private Fame"
+                        except ValueError:
+                            member_fame = "Private Fame"
+                    else:
+                        member_fame = "Private Fame"
 
-        print(tabulate(members_list, headers=["Name", "Guild Rank", "Fame"], tablefmt="pretty")+"\n")
+                # Only add if we have a valid name
+                if member_name and member_name not in ["", "Name"]:
+                    members_list.append((member_name, member_rank, member_fame))
+
+        # Count private vs public profiles for debugging
+        private_count = sum(1 for name, _, _ in members_list if name == "Private")
+        public_count = len(members_list) - private_count
+
+        print(
+            f"Found {len(members_list)} guild members ({public_count} public, {private_count} private)"
+        )
+
+        if members_list:
+            print(
+                tabulate(
+                    members_list,
+                    headers=["Name", "Guild Rank", "Fame"],
+                    tablefmt="pretty",
+                )
+                + "\n"
+            )
+        else:
+            print(f"No valid member data found in the table")
     except requests.RequestException as e:
         print(f"Error during GET request: {e}")
         return None
